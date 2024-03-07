@@ -12,9 +12,9 @@ The code is written in Python and CDK is used to deploy the application to AWS
 
 ## Infrastructure
 
--CDK for deploys
--Lambda to run scraper
--Lambda layers to host Chromedriver and Headless Chrome binaries
--DynamoDb to keep track of which listings are new
--EventBridge to automate lambda invoke
--SNS to send out emails with new listings
+* CDK for deploys
+* Lambda to run scraper
+* Lambda layers to host Chromedriver and Headless Chrome binaries
+* DynamoDb to keep track of which listings are new
+* EventBridge to automate lambda invoke
+* SNS to send out emails with new listings
