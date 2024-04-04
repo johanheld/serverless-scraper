@@ -112,7 +112,7 @@ def write_to_db(articles):
         item = {
             'id': {'S': article['id']},
             'brand': {'S': article['brand']},
-            'tite': {'S': article['title']},
+            'title': {'S': article['title']},
             'url': {'S': article['url']},
         }
 

@@ -50,7 +50,7 @@ class WebScraperStack(Stack):
 
         rule = aws_events.Rule(
             self, 'DailyLambdaEvent',
-            schedule=aws_events.Schedule.cron(hour='7', minute='0'),)
+            schedule=aws_events.Schedule.cron(hour='4', minute='0'),)
         
         rule.add_target(aws_events_targets.LambdaFunction(sellpy_scraper_function))
 
