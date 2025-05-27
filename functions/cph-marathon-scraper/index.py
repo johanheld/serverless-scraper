@@ -3,7 +3,8 @@ import os
 import requests
 from bs4 import BeautifulSoup
 
-TICKET_URL = 'https://secure.onreg.com/onreg2/bibexchange/?eventid=6591&language=us'
+# TICKET_URL_MARATHON = 'https://secure.onreg.com/onreg2/bibexchange/?eventid=6591&language=us'
+TICKET_URL_HALF_MARATHON = 'SET NEW URL'
 SNS_ARN = os.environ['SNS_ARN']
 
 def lambda_handler(event, context):
@@ -11,9 +12,8 @@ def lambda_handler(event, context):
     
     available_ticket, status = check_tickets()
     
-    if status:
-        subject = 'AVAILABLE' if available_ticket else 'IN PROGRESS'
-        publish_to_sns(subject)
+    if available_ticket:
+        publish_to_sns('AVAILABLE')
     
     return {
         'statusCode': 200,
@@ -21,7 +21,7 @@ def lambda_handler(event, context):
     }
 
 def check_tickets():
-    response = requests.get(TICKET_URL)
+    response = requests.get(TICKET_URL_HALF_MARATHON)
     soup = BeautifulSoup(response.text, 'html.parser')
 
     # For local test files
@@ -47,7 +47,7 @@ def publish_to_sns(status):
     client = boto3.client('sns')
     
     subject = f'TICKETS {status}'
-    message = f'Tickets are {status.lower()}.\nCheck the link: {TICKET_URL}'
+    message = f'Tickets are {status.lower()}.\nCheck the link: {TICKET_URL_HALF_MARATHON}'
 
     response = client.publish(
         TopicArn= SNS_ARN,

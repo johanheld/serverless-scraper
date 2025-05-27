@@ -9,24 +9,34 @@ from headless_chrome import create_driver
 from botocore.exceptions import ClientError
 from collections import defaultdict
 
+driver = create_driver()
+
+# For localhost
+# driver = webdriver.Chrome()
+# os.environ["DYNAMO_TABLE"] = "articles table"
+# os.environ["SNS_ARN"] = "sns arn"
+
+brands = ['fedeli', 'zanone',
+          'finamore', 'glanshirt',
+          'brunello+cucinelli',
+          'sunspel', 'lardini',
+          'alden', 'crockett+jones',
+          'gran+sasso', 'montedoro',
+          'boglioli', 'brioni',
+          'loro+piana', 'caruso', 'etro',
+          'aspesi', 'mazzarelli', 'kiton',
+          'mismo', 'rubato', 'incotex',
+          'zegna', 'altea' 
+        ]
+
 def lambda_handler(event, context):
     print('-----------handler started------------')
-    
-    brands = ['fedeli', 'zanone',
-              'finamore', 'glanshirt',
-              'brunello+cucinelli',
-              'sunspel', 'lardini',
-              'alden', 'crockett+jones',
-              'gran+sasso', 'montedoro',
-              'boglioli', 'brioni',
-              'loro+piana', 'caruso', 'etro',
-              'aspesi', 'mazzarelli', 'kiton',
-              'mismo'
-              ]
     
     raw_articles = scrape_articles(brands)
     parsed_articles = parse_articles(raw_articles)
     new_articles = write_to_db(parsed_articles)
+    print(parsed_articles)
+
     if len(new_articles) > 0:
         publish_to_sns(new_articles)
     return {
@@ -36,8 +46,6 @@ def lambda_handler(event, context):
 
 def scrape_articles(brands):
     raw_articles = []
-    driver = create_driver()
-    # driver = webdriver.Chrome()
     baseUrl = 'https://www.sellpy.se/search?query={}&sortBy=saleStartedAt_desc'
     
     for brand in brands:
@@ -45,7 +53,7 @@ def scrape_articles(brands):
         url = baseUrl.format(brand) 
         driver.get(url)
 
-        time.sleep(3)
+        time.sleep(7)
 
         html = driver.page_source
         soup = BeautifulSoup(html, 'html.parser')
@@ -146,6 +154,7 @@ def publish_to_sns(articles):
     
     subject = f'{len(articles)} new Sellpy listings'
     message = format_message(articles)
+    print(message)
 
     response = client.publish(
         TopicArn=os.environ['SNS_ARN'],

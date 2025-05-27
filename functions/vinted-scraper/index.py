@@ -10,6 +10,13 @@ from headless_chrome import create_driver
 from botocore.exceptions import ClientError
 from collections import defaultdict
 
+driver = create_driver()
+
+# For localhost
+# driver = webdriver.Chrome()
+# os.environ["DYNAMO_TABLE"] = "articles table"
+# os.environ["SNS_ARN"] = "sns arn"
+
 brands = ['fedeli', 'zanone',
           'finamore', 'glanshirt',
           'brunello+cucinelli',
@@ -19,12 +26,13 @@ brands = ['fedeli', 'zanone',
           'boglioli', 'brioni',
           'loro+piana', 'caruso', 'etro',
           'aspesi', 'mazzarelli', 'kiton',
-          'mismo'
-         ]
+          'mismo', 'rubato', 'incotex',
+          'zegna', 'altea' 
+        ]
 
 def lambda_handler(event, context):
     print('-----------handler started------------')
-    
+
     raw_articles = scrape_articles()
     parsed_articles = parse_articles(raw_articles)
     new_articles = write_to_db(parsed_articles)
@@ -37,8 +45,6 @@ def lambda_handler(event, context):
 
 def scrape_articles():
     raw_articles = []
-    driver = create_driver()
-    # driver = webdriver.Chrome()
     baseUrl = 'https://www.vinted.se/catalog?search_text={}&order=newest_first&catalog[]=5&page=1'
     
     for brand in brands:
@@ -46,7 +52,7 @@ def scrape_articles():
         url = baseUrl.format(brand) 
         driver.get(url)
 
-        time.sleep(3)
+        time.sleep(7)
 
         html = driver.page_source
         soup = BeautifulSoup(html, 'html.parser')
@@ -78,7 +84,6 @@ def parse_articles(articles):
             continue
 
         data['brand'] = brand
-
         
         # Extract size
         size_tag = article.find('p', class_='web_ui__Text__text', attrs={'data-testid': lambda x: x and 'description-subtitle' in x})

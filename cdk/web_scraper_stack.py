@@ -15,7 +15,7 @@ class WebScraperStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
         
-        table = TableV2(self, "ArticleTable",
+        table_sellpy = TableV2(self, "ArticleTable",
             table_name='articles',
             partition_key=Attribute(name="id", type=AttributeType.STRING),
             billing=Billing.provisioned(
@@ -52,13 +52,13 @@ class WebScraperStack(Stack):
             function_name='sellpy-scraper',
             runtime=Runtime.PYTHON_3_8,
             handler='lambda_handler', 
-            entry='./functions/scraper',
+            entry='./functions/sellpy-scraper',
             layers=[chrome_driver_layer],
             memory_size=1024,
             timeout=Duration.minutes(15),
             environment={
                 'SNS_ARN': topic.topic_arn,
-                'DYNAMO_TABLE': table.table_name
+                'DYNAMO_TABLE': table_sellpy.table_name
             }
         )
 
@@ -77,12 +77,12 @@ class WebScraperStack(Stack):
             }
         )
 
-        cph_half_scraper_function=lambda_alpha_.PythonFunction(
-            self, 'CphHalfFunction',
-            function_name='cph-half-scraper',
+        cph_marathon_scraper_function=lambda_alpha_.PythonFunction(
+            self, 'CphMarathonFunction',
+            function_name='cph-marathon-scraper',
             runtime=Runtime.PYTHON_3_8,
             handler='lambda_handler', 
-            entry='./functions/cph-half-scraper',
+            entry='./functions/cph-marathon-scraper',
             memory_size=512,
             timeout=Duration.minutes(1),
             environment={
@@ -104,10 +104,10 @@ class WebScraperStack(Stack):
 
         rule.add_target(aws_events_targets.LambdaFunction(sellpy_scraper_function))
         rule.add_target(aws_events_targets.LambdaFunction(vinted_scraper_function))
-        ticket_rule.add_target(aws_events_targets.LambdaFunction(cph_half_scraper_function))
+        # ticket_rule.add_target(aws_events_targets.LambdaFunction(cph_marathon_scraper_function))
 
-        table.grant_full_access(sellpy_scraper_function)
+        table_sellpy.grant_full_access(sellpy_scraper_function)
         table_vinted.grant_full_access(vinted_scraper_function)
         topic.grant_publish(sellpy_scraper_function)
         topic.grant_publish(vinted_scraper_function)
-        ticket_topic.grant_publish(cph_half_scraper_function)
+        ticket_topic.grant_publish(cph_marathon_scraper_function)
