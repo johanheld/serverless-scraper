@@ -2,7 +2,9 @@ from aws_cdk import (
     Duration,
     Stack,
     aws_events,
-    aws_events_targets
+    aws_events_targets,
+    aws_ses as ses,
+    aws_ssm as ssm
 )
 from constructs import Construct
 from aws_cdk.aws_lambda import Code, Runtime, LayerVersion
@@ -105,6 +107,22 @@ class WebScraperStack(Stack):
         rule.add_target(aws_events_targets.LambdaFunction(sellpy_scraper_function))
         rule.add_target(aws_events_targets.LambdaFunction(vinted_scraper_function))
         # ticket_rule.add_target(aws_events_targets.LambdaFunction(cph_marathon_scraper_function))
+        
+        # Get email from SSM Parameter Store
+        sender_email_param = ssm.StringParameter.from_string_parameter_name(
+            self,
+            "SenderEmailParam",
+            string_parameter_name="/ses/email"
+        )
+
+        # Create SES Email Identity
+        email_identity = ses.EmailIdentity(
+            self,
+            "EmailIdentity",
+            identity=ses.Identity.email(sender_email_param.string_value)
+        )
+        
+        email_identity.grant_send_email(vinted_scraper_function)
 
         table_sellpy.grant_full_access(sellpy_scraper_function)
         table_vinted.grant_full_access(vinted_scraper_function)
