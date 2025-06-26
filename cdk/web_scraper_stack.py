@@ -108,24 +108,24 @@ class WebScraperStack(Stack):
         rule.add_target(aws_events_targets.LambdaFunction(vinted_scraper_function))
         # ticket_rule.add_target(aws_events_targets.LambdaFunction(cph_marathon_scraper_function))
         
-        # Get email from SSM Parameter Store
         sender_email_param = ssm.StringParameter.from_string_parameter_name(
             self,
             "SenderEmailParam",
             string_parameter_name="/ses/email"
         )
 
-        # Create SES Email Identity
         email_identity = ses.EmailIdentity(
             self,
             "EmailIdentity",
             identity=ses.Identity.email(sender_email_param.string_value)
         )
         
-        email_identity.grant_send_email(vinted_scraper_function)
-
         table_sellpy.grant_full_access(sellpy_scraper_function)
         table_vinted.grant_full_access(vinted_scraper_function)
         topic.grant_publish(sellpy_scraper_function)
         topic.grant_publish(vinted_scraper_function)
         ticket_topic.grant_publish(cph_marathon_scraper_function)
+        email_identity.grant_send_email(vinted_scraper_function)
+        email_identity.grant_send_email(sellpy_scraper_function)
+        sender_email_param.grant_read(vinted_scraper_function)
+        sender_email_param.grant_read(sellpy_scraper_function)
