@@ -4,10 +4,14 @@ from aws_cdk import (
     aws_events,
     aws_events_targets,
     aws_ses as ses,
-    aws_ssm as ssm
+    aws_ssm as ssm,
+    aws_sqs as sqs,
+    aws_s3 as s3,
+    aws_lambda_event_sources, 
+    RemovalPolicy
 )
 from constructs import Construct
-from aws_cdk.aws_lambda import Code, Runtime, LayerVersion
+from aws_cdk.aws_lambda import Code, Runtime, LayerVersion 
 from aws_cdk.aws_sns import Topic
 from aws_cdk.aws_dynamodb import TableV2, Attribute, AttributeType, Billing, Capacity
 from aws_cdk import aws_lambda_python_alpha as lambda_alpha_
@@ -43,6 +47,24 @@ class WebScraperStack(Stack):
             topic_name="ticket-topic"
         )
 
+        email_queue = sqs.Queue(
+            self, "EmailSendQueue",
+            queue_name="email-send-queue",
+            visibility_timeout=Duration.seconds(60),
+        )
+
+        html_bucket = s3.Bucket(
+            self, "HtmlStorageBucket",
+            bucket_name="serverless-scraper-html-emails",
+            lifecycle_rules=[
+                s3.LifecycleRule(
+                    expiration=Duration.days(30)
+                )
+            ],
+            removal_policy=RemovalPolicy.DESTROY,
+            auto_delete_objects=True
+        )
+
         chrome_driver_layer = LayerVersion(
             self, 'ChromeDriverLayer',
             compatible_runtimes=[Runtime.PYTHON_3_8],
@@ -60,7 +82,9 @@ class WebScraperStack(Stack):
             timeout=Duration.minutes(15),
             environment={
                 'SNS_ARN': topic.topic_arn,
-                'DYNAMO_TABLE': table_sellpy.table_name
+                'DYNAMO_TABLE': table_sellpy.table_name,
+                'S3_HTML_BUCKET': html_bucket.bucket_name,
+                'SQS_EMAIL_QUEUE': email_queue.queue_url,
             }
         )
 
@@ -75,7 +99,22 @@ class WebScraperStack(Stack):
             timeout=Duration.minutes(15),
             environment={
                 'SNS_ARN': topic.topic_arn,
-                'DYNAMO_TABLE': table_vinted.table_name
+                'DYNAMO_TABLE': table_vinted.table_name,
+                'S3_HTML_BUCKET': html_bucket.bucket_name,
+                'SQS_EMAIL_QUEUE': email_queue.queue_url,
+            }
+        )
+
+        email_send_function=lambda_alpha_.PythonFunction(
+            self, 'EmailSendFunction',
+            function_name='email-send',
+            runtime=Runtime.PYTHON_3_12,
+            handler='lambda_handler', 
+            entry='./functions/email-send',
+            memory_size=1024,
+            timeout=Duration.minutes(1),
+            environment={
+                'S3_HTML_BUCKET': html_bucket.bucket_name,
             }
         )
 
@@ -108,16 +147,35 @@ class WebScraperStack(Stack):
         rule.add_target(aws_events_targets.LambdaFunction(vinted_scraper_function))
         # ticket_rule.add_target(aws_events_targets.LambdaFunction(cph_marathon_scraper_function))
         
-        sender_email_param = ssm.StringParameter.from_string_parameter_name(
-            self,
-            "SenderEmailParam",
-            string_parameter_name="/ses/email"
+        sqs_event_source = aws_lambda_event_sources.SqsEventSource(
+            email_queue,
+            batch_size=1
         )
 
-        email_identity = ses.EmailIdentity(
+        email_send_function.add_event_source(sqs_event_source)
+        
+        sender_email_param = ssm.StringParameter.from_string_parameter_name(
             self,
-            "EmailIdentity",
+            "SenderEmailParameter",
+            string_parameter_name="/ses/email/sender"
+        )
+
+        recipient_email_param = ssm.StringParameter.from_string_parameter_name(
+            self,
+            "RecipientEmailParameter",
+            string_parameter_name="/ses/email/recipient"
+        )
+
+        email_sender_identity = ses.EmailIdentity(
+            self,
+            "EmailSenderIdentity",
             identity=ses.Identity.email(sender_email_param.string_value)
+        )
+
+        email_recipient_identity = ses.EmailIdentity(
+            self,
+            "EmailRecipientIdentity",
+            identity=ses.Identity.email(recipient_email_param.string_value)
         )
         
         table_sellpy.grant_full_access(sellpy_scraper_function)
@@ -125,7 +183,17 @@ class WebScraperStack(Stack):
         topic.grant_publish(sellpy_scraper_function)
         topic.grant_publish(vinted_scraper_function)
         ticket_topic.grant_publish(cph_marathon_scraper_function)
-        email_identity.grant_send_email(vinted_scraper_function)
-        email_identity.grant_send_email(sellpy_scraper_function)
+        email_sender_identity.grant_send_email(vinted_scraper_function)
+        email_sender_identity.grant_send_email(sellpy_scraper_function)
+        email_sender_identity.grant_send_email(email_send_function)
+        email_recipient_identity.grant_send_email(email_send_function)
         sender_email_param.grant_read(vinted_scraper_function)
         sender_email_param.grant_read(sellpy_scraper_function)
+        sender_email_param.grant_read(email_send_function)
+        recipient_email_param.grant_read(vinted_scraper_function)
+        recipient_email_param.grant_read(sellpy_scraper_function)
+        html_bucket.grant_put(vinted_scraper_function)
+        html_bucket.grant_put(sellpy_scraper_function)
+        html_bucket.grant_read(email_send_function)
+        email_queue.grant_send_messages(vinted_scraper_function)
+        email_queue.grant_send_messages(sellpy_scraper_function)
