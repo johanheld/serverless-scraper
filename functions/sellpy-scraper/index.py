@@ -8,12 +8,15 @@ from selenium import webdriver
 from headless_chrome import create_driver
 from botocore.exceptions import ClientError
 from collections import defaultdict
+from datetime import datetime, timezone
 
 driver = create_driver()
 
 # For localhost
 # driver = webdriver.Chrome()
-# os.environ["DYNAMO_TABLE"] = "articles table"
+# os.environ["DYNAMO_TABLE"] = "article table"
+# os.environ["S3_HTML_BUCKET"] = "bucket name"
+# os.environ["SQS_EMAIL_QUEUE"] = "sqs url"
 # os.environ["SNS_ARN"] = "sns arn"
 
 brands = [
@@ -45,7 +48,6 @@ brands = [
     "tumi",
 ]
 
-
 def lambda_handler(event, context):
     print("-----------handler started------------")
 
@@ -53,11 +55,12 @@ def lambda_handler(event, context):
     parsed_articles = parse_articles(raw_articles)
     new_articles = write_to_db(parsed_articles)
 
-    if len(new_articles) > 0:
-        send_email(new_articles)
-        # publish_to_sns(new_articles)
-    return {"statusCode": 200, "body": json.dumps(len(new_articles))}
+    if len(new_articles ) > 0:
+        html = generate_html(new_articles)
+        html_s3_object_id = upload_html_to_s3(html)
+        push_event_to_sqs(html_s3_object_id, len(new_articles))
 
+    return {"statusCode": 200, "body": json.dumps(len(new_articles))}
 
 def scrape_articles():
     raw_articles = []
@@ -170,7 +173,40 @@ def write_to_db(articles):
 
     print("-------------------------")
     print(f"New listings saved: {len(new_items)}")
+    print(f"New listings: {new_items}")
     return new_items
+
+def upload_html_to_s3(html):
+    bucket_name = os.environ["S3_HTML_BUCKET"]
+    date_key = datetime.now(timezone.utc).strftime("%Y-%m-%d") # e.g. "2025-06-28"
+    object_key = f"sellpy/{date_key}.html"
+
+    s3 = boto3.client("s3")
+    s3.put_object(Bucket=bucket_name, Key=object_key, Body=html, ContentType="text/html")
+
+    print(f"Uploaded to s3://{bucket_name}/{object_key}")
+    return object_key
+    
+def push_event_to_sqs(s3_object_id, nbr_of_new_listings):
+    sqs = boto3.client("sqs")
+    ssm = boto3.client("ssm")
+
+    subject = f"{nbr_of_new_listings} new Sellpy listings"
+    recipient = ssm.get_parameter(Name="/ses/email/recipient")["Parameter"]["Value"] 
+
+    message_body = json.dumps({
+        "object_key": s3_object_id,
+        "subject": subject,
+        "recipient": recipient
+    })
+
+    response = sqs.send_message(
+        QueueUrl=os.environ["SQS_EMAIL_QUEUE"],
+        MessageBody=message_body
+    )
+    
+    print("-------------------------")
+    print("Message published to SQS:", response["MessageId"])
 
 
 def publish_to_sns(articles):
@@ -192,15 +228,15 @@ def send_email(articles):
     ses = boto3.client("ses")
     ssm = boto3.client("ssm")
 
-    param = ssm.get_parameter(Name="/ses/email", WithDecryption=False)
-    to_address = param["Parameter"]["Value"]
+    recipient = ssm.get_parameter(Name="/ses/email/recipient")["Parameter"]["Value"]
+    sender = ssm.get_parameter(Name="/ses/email/sender")["Parameter"]["Value"]
 
     subject = f"{len(articles)} new Sellpy listings"
     html = generate_html(articles)
 
     response = ses.send_email(
-        Source=to_address,
-        Destination={"ToAddresses": [to_address]},
+        Source=sender,
+        Destination={"ToAddresses": [recipient]},
         Message={
             "Subject": {"Data": subject},
             "Body": {"Html": {"Data": html}},
