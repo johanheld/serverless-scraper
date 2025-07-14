@@ -9,15 +9,7 @@ from headless_chrome import create_driver
 from botocore.exceptions import ClientError
 from collections import defaultdict
 from datetime import datetime, timezone
-
-driver = create_driver()
-
-# For localhost
-# driver = webdriver.Chrome()
-# os.environ["DYNAMO_TABLE"] = "article table"
-# os.environ["S3_HTML_BUCKET"] = "bucket name"
-# os.environ["SQS_EMAIL_QUEUE"] = "sqs url"
-# os.environ["SNS_ARN"] = "sns arn"
+from dotenv import load_dotenv
 
 brands = [
     "fedeli",
@@ -48,6 +40,7 @@ brands = [
     "tumi",
 ]
 
+
 def lambda_handler(event, context):
     print("-----------handler started------------")
 
@@ -55,14 +48,20 @@ def lambda_handler(event, context):
     parsed_articles = parse_articles(raw_articles)
     new_articles = write_to_db(parsed_articles)
 
-    if len(new_articles ) > 0:
+    if len(new_articles) > 0:
         html = generate_html(new_articles)
         html_s3_object_id = upload_html_to_s3(html)
         push_event_to_sqs(html_s3_object_id, len(new_articles))
 
     return {"statusCode": 200, "body": json.dumps(len(new_articles))}
 
+
 def scrape_articles():
+    if os.getenv("ENVIRONMENT") == "local":
+        driver = webdriver.Chrome()
+    else:
+        driver = create_driver()
+
     raw_articles = []
     baseUrl = "https://www.sellpy.se/search?query={}&sortBy=saleStartedAt_desc"
 
@@ -176,35 +175,36 @@ def write_to_db(articles):
     print(f"New listings: {new_items}")
     return new_items
 
+
 def upload_html_to_s3(html):
     bucket_name = os.environ["S3_HTML_BUCKET"]
-    date_key = datetime.now(timezone.utc).strftime("%Y-%m-%d") # e.g. "2025-06-28"
+    date_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")  # e.g. "2025-06-28"
     object_key = f"sellpy/{date_key}.html"
 
     s3 = boto3.client("s3")
-    s3.put_object(Bucket=bucket_name, Key=object_key, Body=html, ContentType="text/html")
+    s3.put_object(
+        Bucket=bucket_name, Key=object_key, Body=html, ContentType="text/html"
+    )
 
     print(f"Uploaded to s3://{bucket_name}/{object_key}")
     return object_key
-    
+
+
 def push_event_to_sqs(s3_object_id, nbr_of_new_listings):
     sqs = boto3.client("sqs")
     ssm = boto3.client("ssm")
 
     subject = f"{nbr_of_new_listings} new Sellpy listings"
-    recipient = ssm.get_parameter(Name="/ses/email/recipient")["Parameter"]["Value"] 
+    recipient = ssm.get_parameter(Name="/ses/email/recipient")["Parameter"]["Value"]
 
-    message_body = json.dumps({
-        "object_key": s3_object_id,
-        "subject": subject,
-        "recipient": recipient
-    })
+    message_body = json.dumps(
+        {"object_key": s3_object_id, "subject": subject, "recipient": recipient}
+    )
 
     response = sqs.send_message(
-        QueueUrl=os.environ["SQS_EMAIL_QUEUE"],
-        MessageBody=message_body
+        QueueUrl=os.environ["SQS_EMAIL_QUEUE"], MessageBody=message_body
     )
-    
+
     print("-------------------------")
     print("Message published to SQS:", response["MessageId"])
 
@@ -297,8 +297,8 @@ def generate_html(articles):
         <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border: 1px solid #ddd; border-collapse: collapse;">
           <tr>
             <td align="center" style="padding-bottom: 10px;">
-                <a href="{item['url']}" target="_blank">
-                    <img src="{item['img_url']}" alt="" style="width: 100%; height: auto; display: block;">
+                <a href="{item["url"]}" target="_blank">
+                    <img src="{item["img_url"]}" alt="" style="width: 100%; height: auto; display: block;">
                 </a>
             </td>
           </tr>
@@ -330,6 +330,7 @@ def generate_html(articles):
 
 
 if __name__ == "__main__":
+    load_dotenv()
     event = {}  # Provide any necessary event data here
     context = {}  # Provide any necessary context data here
     result = lambda_handler(event, context)
