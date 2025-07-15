@@ -278,8 +278,8 @@ def generate_html(articles):
         html += f"""
   <table width="600" cellpadding="0" cellspacing="0" border="0" align="center" style="border-collapse: collapse; margin-bottom: 20px;">
     <tr>
-      <td style="padding: 15px 0 5px 0;">
-        <div style="font-weight: bold; font-size: 22px; padding-bottom: 10px;">
+      <td style="padding: 15px 0 5px 10px;">
+        <div style="font-weight: bold; font-size: 28px; padding-bottom: 10px;">
           {brand}
         </div>
       </td>
@@ -294,25 +294,35 @@ def generate_html(articles):
                 if i + j < len(items):
                     item = items[i + j]
                     html += f"""      <td width="50%" valign="top" style="padding: 10px;">
-        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border: 1px solid #ddd; border-collapse: collapse;">
-          <tr>
-            <td align="center" style="padding-bottom: 10px;">
-                <a href="{item["url"]}" target="_blank">
-                    <img src="{item["img_url"]}" alt="" style="width: 100%; height: auto; display: block;">
-                </a>
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding-bottom: 5px; font-weight: bold;">
-              {item["title"]} - Size {item["price"]}
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="color: #555;">
-              ID: {item["id"]}
-            </td>
-          </tr>
-        </table>
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border: 1px solid #ddd; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 14px;">
+  <tr>
+    <td align="center" style="padding-bottom: 10px;">
+      <a href="{item["url"]}" target="_blank">
+        <img src="{item["img_url"]}" alt="" style="width: 100%; height: auto; display: block;">
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="left" style="padding: 10px; font-weight: bold; font-size: 16px; color: #222;">
+      {item["brand"]}
+    </td>
+  </tr>
+  <tr>
+    <td align="left" style="padding: 0 10px 0px 10px; color: #333;">
+      <b>{item["title"]}</b>
+    </td>
+  </tr>
+  <tr>
+    <td align="left" style="padding: 0 10px 5px 10px; color: #333;">
+      <b>Price: {item["price"]}</b>
+    </td>
+  </tr>
+  <tr>
+    <td align="left" style="padding: 0 10px 10px 10px; color: #777; font-size: 12px;">
+      ID: {item["id"]}
+    </td>
+  </tr>
+</table>
       </td>
 """
                 else:
