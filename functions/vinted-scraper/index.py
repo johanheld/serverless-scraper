@@ -17,16 +17,16 @@ brands = [
     "zanone",
     "finamore",
     "glanshirt",
-    "brunello+cucinelli",
+    "brunello cucinelli",
     "sunspel",
     "lardini",
     "alden",
-    "crockett+jones",
-    "gran+sasso",
+    "crockett & jones",
+    "gran sasso",
     "montedoro",
     "boglioli",
     "brioni",
-    "loro+piana",
+    "loro piana",
     "caruso",
     "etro",
     "aspesi",
@@ -122,11 +122,11 @@ def parse_articles(articles):
                 data["size"] = size_text
                 data["condition"] = condition_text
             else:
-                data["size"] = "Size not found"
+                data["size"] = "N/A"
                 data["condition"] = text
         else:
-            data["size"] = "Size not found"
-            data["condition"] = "Condition not found"
+            data["size"] = "N/A"
+            data["condition"] = "N/A"
 
         # Extract price with fee
         price_with_fee_tag = article.find(
@@ -349,17 +349,17 @@ def generate_html(articles):
   </tr>
   <tr>
     <td align="left" style="padding: 0 10px 0px 10px; color: #333;">
-      <b>Size:</b> {item["size"]}
+      <b>Storlek:</b> {item["size"]}
     </td>
   </tr>
   <tr>
     <td align="left" style="padding: 0 10px 0px 10px; color: #333;">
-      <b>Condition:</b> {item["condition"]}
+      <b>Skick:</b> {item["condition"]}
     </td>
   </tr>
   <tr>
     <td align="left" style="padding: 0 10px 5px 10px; color: #333;">
-      <b>Price:</b> {item["price"]}
+      <b>Pris:</b> {item["price"]}
     </td>
   </tr>
   <tr>
