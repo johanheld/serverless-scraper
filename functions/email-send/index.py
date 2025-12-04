@@ -14,6 +14,7 @@ def lambda_handler(event, context):
     for record in event["Records"]:
         body = json.loads(record["body"])
         
+        sender_name = body["sender_name"]
         subject = body["subject"]
         recipient = body["recipient"]
         object_key = body["object_key"]
@@ -23,12 +24,12 @@ def lambda_handler(event, context):
         html_content = response["Body"].read().decode("utf-8")
         
         response = ses.send_email(
-            Source=SENDER_EMAIL,
+            Source=f"{sender_name} <{SENDER_EMAIL}>",
             Destination={"ToAddresses": [recipient]},
             Message={
                 "Subject": {"Data": subject},
                 "Body": {"Html": {"Data": html_content}}
-            }
+            },
         )
         print("Message published to SES:", response["MessageId"])
         

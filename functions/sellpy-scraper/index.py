@@ -13,30 +13,34 @@ from dotenv import load_dotenv
 
 brands = [
     "fedeli",
-    "zanone",
-    "finamore",
-    "glanshirt",
-    "brunello+cucinelli",
-    "sunspel",
+    "piacenza",
+    "fioroni",
+    "boglioli",
     "lardini",
+    "zanone",
+    "incotex",
+    "glanshirt",
+    "montedoro",
+    "sunspel",
+    "william+lockie",
+    "johnstons+of+elgin",
+    "finamore",
+    "mazzarelli",
+    "altea",
+    "aspesi",
+    "rubato",
+    "etro",
+    "loro+piana",
+    "brunello+cucinelli",
+    "gran+sasso",
+    "kiton",
+    "ermenegildo",
+    "brioni",
+    "caruso",
+    "satisfy",
     "alden",
     "crockett+jones",
-    "gran+sasso",
-    "montedoro",
-    "boglioli",
-    "brioni",
-    "loro+piana",
-    "caruso",
-    "etro",
-    "aspesi",
-    "mazzarelli",
-    "kiton",
     "mismo",
-    "rubato",
-    "incotex",
-    "zegna",
-    "altea",
-    "satisfy",
     "tumi",
 ]
 
@@ -194,11 +198,12 @@ def push_event_to_sqs(s3_object_id, nbr_of_new_listings):
     sqs = boto3.client("sqs")
     ssm = boto3.client("ssm")
 
-    subject = f"{nbr_of_new_listings} new Sellpy listings"
+    sender_name = "Sellpy"
+    subject = f"⚡ {nbr_of_new_listings} new Sellpy listings"
     recipient = ssm.get_parameter(Name="/ses/email/recipient")["Parameter"]["Value"]
 
     message_body = json.dumps(
-        {"object_key": s3_object_id, "subject": subject, "recipient": recipient}
+        {"object_key": s3_object_id, "sender_name": sender_name, "subject": subject, "recipient": recipient}
     )
 
     response = sqs.send_message(
