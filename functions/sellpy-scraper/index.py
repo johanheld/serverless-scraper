@@ -99,6 +99,10 @@ def parse_articles(articles):
         meta_tag = article.find("meta", itemprop="brand")
         data["brand"] = meta_tag.get("content") if meta_tag else None
 
+        if not is_approved_brand(data["brand"]):
+            print(f"'{data['brand']}' does not match any approved brand.")
+            continue
+
         # Title
         item_tag = article.find("p")
         data["title"] = item_tag.text if item_tag else None
@@ -250,6 +254,12 @@ def send_email(articles):
 
     print("-------------------------")
     print("Message published to SES:", response["MessageId"])
+
+
+def is_approved_brand(brand: str) -> bool:
+    if not brand:
+        return False
+    return any(approved_brand.lower() in brand.lower() for approved_brand in brands)
 
 
 def format_message(articles):
