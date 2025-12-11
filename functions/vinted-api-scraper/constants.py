@@ -10,7 +10,7 @@ USER_AGENT = (
 BASE_HEADERS = {
     "User-Agent": USER_AGENT,
     "Accept": "application/json, text/plain, */*",
-    "Accept-Encoding": "gzip, deflate, br, zstd",
+    "Accept-Encoding": "gzip, deflate",
     "Accept-Language": "en-US,en;q=0.5",
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1",

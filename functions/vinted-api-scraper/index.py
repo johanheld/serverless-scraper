@@ -32,6 +32,7 @@ brands = [
     "loro piana",
     "brunello cucinelli",
     "gran sasso",
+    "zimmerli",
     "kiton",
     "ermenegildo",
     "brioni",
@@ -211,9 +212,17 @@ def is_approved_brand(brand: str) -> bool:
 def fetch_listings(brand: str, headers: dict) -> list[dict]:
     print(f"Scraping brand: {brand}")
     listings = []
-
     response = requests.get(API_URL.format(brand), headers=headers)
-    items = response.json().get("items", [])
+
+    try:
+        data = response.json()
+    except ValueError:
+        print("Non-JSON response for brand:", brand)
+        print("Status:", response.status_code)
+        print("Body:", response.text[:500])  # Log first 500 chars
+        return []  # or return None
+    
+    items = data.get("items", [])
 
     for item in items:
         listing = parse_listing(item)

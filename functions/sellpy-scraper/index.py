@@ -33,6 +33,7 @@ brands = [
     "loro+piana",
     "brunello+cucinelli",
     "gran+sasso",
+    "zimmerli",
     "kiton",
     "ermenegildo",
     "brioni",
