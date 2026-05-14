@@ -97,29 +97,31 @@ def parse_articles(articles):
         data = {}
 
         # Brand
-        meta_tag = article.find("meta", itemprop="brand")
-        data["brand"] = meta_tag.get("content") if meta_tag else None
+        brand_tag = article.find("h3")
+        data["brand"] = brand_tag.get_text(strip=True) if brand_tag else None
 
         if not is_approved_brand(data["brand"]):
             print(f"'{data['brand']}' does not match any approved brand.")
             continue
 
         # Title
-        item_tag = article.find("p")
-        data["title"] = item_tag.text if item_tag else None
+        item_tag = article.find("p", class_=lambda x: x and "sc-fFlnrN" in x)
+        data["title"] = item_tag.get_text(strip=True) if item_tag else None
 
         # Price
-        price_tag = article.find("p", itemprop="price")
-        data["price"] = price_tag.text if price_tag else None
+        price_tag = article.find("p", string=lambda s: s and "SEK" in s)
+        data["price"] = price_tag.get_text(strip=True) if price_tag else None
 
-        # Url
+        # Url & ID
+        data["id"] = article.get("data-item-id")
         link = article.find("a")
         href = link.get("href") if link else None
-        if href is None:
+
+        if href:
+            data["url"] = "https://www.sellpy.se" + href
+        else:
             print("Skipping article - URL not found")
             continue
-        data["url"] = "https://www.sellpy.se" + href
-        data["id"] = href.split("/")[2]
 
         # Image
         image_tag = article.find("img")
