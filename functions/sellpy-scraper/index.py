@@ -18,6 +18,7 @@ brands = [
     "boglioli",
     "lardini",
     "zanone",
+    "drakes",
     "incotex",
     "glanshirt",
     "montedoro",
@@ -40,7 +41,7 @@ brands = [
     "caruso",
     "satisfy",
     "alden",
-    "crockett+jones",
+    "crockett+&+jones",
     "mismo",
     "tumi",
 ]
@@ -95,24 +96,37 @@ def parse_articles(articles):
 
     for article in articles:
         data = {}
+        
+        # 1. Grab the embedded JSON-LD script block
+        json_script = article.find("script", type="application/ld+json")
+        if not json_script:
+            print("Skipping article - JSON data block missing entirely")
+            continue
+            
+        try:
+            ld_data = json.loads(json_script.string)
+        except (json.JSONDecodeError, TypeError):
+            print("Skipping article - Error parsing JSON payload")
+            continue
 
-        # Brand
-        brand_tag = article.find("h3")
-        data["brand"] = brand_tag.get_text(strip=True) if brand_tag else None
+        # 2. Map data cleanly directly from the JSON structure
+        raw_brand = ld_data.get("brand", {}).get("name")
+        data["brand"] = raw_brand.strip() if raw_brand else None
 
         if not is_approved_brand(data["brand"]):
             print(f"'{data['brand']}' does not match any approved brand.")
             continue
 
-        # Title
-        item_tag = article.find("p", class_=lambda x: x and "sc-fFlnrN" in x)
-        data["title"] = item_tag.get_text(strip=True) if item_tag else None
+        # Build clean title safely
+        data["title"] = ld_data.get("name")
 
-        # Price
-        price_tag = article.find("p", string=lambda s: s and "SEK" in s)
-        data["price"] = price_tag.get_text(strip=True) if price_tag else None
+        # Extract numeric price and rebuild your display string
+        offers = ld_data.get("offers", {})
+        price_val = offers.get("price")
+        currency = offers.get("priceCurrency", "SEK")
+        data["price"] = f"{price_val} {currency}" if price_val else None
 
-        # Url & ID
+        # 3. Pull unique IDs and URLs from safe structural elements
         data["id"] = article.get("data-item-id")
         link = article.find("a")
         href = link.get("href") if link else None
@@ -120,14 +134,13 @@ def parse_articles(articles):
         if href:
             data["url"] = "https://www.sellpy.se" + href
         else:
-            print("Skipping article - URL not found")
+            print("Skipping article - URL anchor missing")
             continue
 
-        # Image
-        image_tag = article.find("img")
-        data["img_url"] = image_tag.get("src") if image_tag else None
+        # Pull image asset location
+        data["img_url"] = ld_data.get("image")
 
-        # Skip article if any required property is missing
+        # 4. Filter guards
         if None in (
             data["brand"],
             data["title"],
@@ -135,15 +148,16 @@ def parse_articles(articles):
             data["url"],
             data["img_url"],
         ):
+            print("Skipping article - Missing required parsed fields")
             continue
 
-        # If price not set, article is sold
-        if "\xa0" in data["price"]:
+        # Handle sold items safely using raw numeric checks 
+        # or fall back to checking text for invalid prices
+        if not price_val or "\xa0" in data["price"]:
             continue
 
         results.append(data)
 
-    # pprint.pp(parsed_articles)
     print("----------------------")
     print(f"Parsed listings: {len(results)}")
     return results
@@ -262,7 +276,7 @@ def send_email(articles):
 def is_approved_brand(brand: str) -> bool:
     if not brand:
         return False
-    return any(approved_brand.lower() in brand.lower() for approved_brand in brands)
+    return any(approved_brand.lower().replace("+", " ") in brand.lower() for approved_brand in brands)
 
 
 def format_message(articles):
