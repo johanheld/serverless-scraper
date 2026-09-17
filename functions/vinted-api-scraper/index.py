@@ -4,6 +4,7 @@ import pprint
 import requests
 import boto3
 import os
+import uuid
 from botocore.exceptions import ClientError
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -17,6 +18,7 @@ brands = [
     "boglioli",
     "lardini",
     "zanone",
+    "drake's",
     "incotex",
     "glanshirt",
     "montedoro",
@@ -59,14 +61,34 @@ def lambda_handler(event, context):
     return {"statusCode": 200, "body": json.dumps(len(new_listings))}
 
 
-def scrape_listings():
-    access_token = get_access_token()
-    headers = get_api_headers(access_token)
+def create_vinted_session() -> requests.Session:
+    session = requests.Session()
 
+    # Headers with required anonymous tracking & anti-CSRF values
+    headers = {
+        **BASE_HEADERS,
+        "x-anon-id": str(uuid.uuid4()),
+        "x-csrf-token": str(uuid.uuid4()),
+    }
+    session.headers.update(headers)
+
+    # Initial request to base site to gather required cookies (access_token_web, datadome, etc.)
+    response = session.get(BASE_URL)
+
+    # Re-assert authorization cookie if captured
+    access_token = session.cookies.get("access_token_web")
+    if access_token:
+        session.headers["Cookie"] = f"access_token_web={access_token}"
+
+    return session
+
+
+def scrape_listings():
+    session = create_vinted_session()
     listings = []
 
     for brand in brands:
-        brand_listings = fetch_listings(brand, headers)
+        brand_listings = fetch_listings(brand, session)
         listings.extend(brand_listings)
         time.sleep(4)
 
@@ -104,7 +126,6 @@ def write_to_db(listings):
 
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-                # The condition expression was not met, indicating that the item already exists
                 continue
             else:
                 print(e)
@@ -118,7 +139,7 @@ def write_to_db(listings):
 
 def upload_html_to_s3(html):
     bucket_name = os.environ["S3_HTML_BUCKET"]
-    date_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")  # e.g. "2025-06-28"
+    date_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     object_key = f"vinted/{date_key}.html"
 
     s3 = boto3.client("s3")
@@ -139,7 +160,12 @@ def push_event_to_sqs(s3_object_id, nbr_of_new_listings):
     recipient = ssm.get_parameter(Name="/ses/email/recipient")["Parameter"]["Value"]
 
     message_body = json.dumps(
-        {"object_key": s3_object_id, "sender_name": sender_name, "subject": subject, "recipient": recipient}
+        {
+            "object_key": s3_object_id,
+            "sender_name": sender_name,
+            "subject": subject,
+            "recipient": recipient,
+        }
     )
 
     response = sqs.send_message(
@@ -187,53 +213,49 @@ def send_email(listings):
     print("Message published to SES:", response["MessageId"])
 
 
-def get_access_token() -> str:
-    headers = {"User-Agent": USER_AGENT}
-    response = requests.get(BASE_URL, headers=headers)
-
-    # print("Cookies received:")
-    # for cookie in response.cookies:
-    #     print(f"{cookie.name} = {cookie.value}")
-
-    return response.cookies.get("access_token_web")
-
-
-def get_api_headers(access_token: str) -> dict:
-    return {
-        **BASE_HEADERS,
-        "Cookie": f"access_token_web={access_token}",
-    }
-
-
 def is_approved_brand(brand: str) -> bool:
     return any(approved_brand.lower() in brand.lower() for approved_brand in brands)
 
 
-def fetch_listings(brand: str, headers: dict) -> list[dict]:
+def fetch_listings(brand: str, session: requests.Session) -> list[dict]:
     print(f"Scraping brand: {brand}")
     listings = []
-    response = requests.get(API_URL.format(brand), headers=headers)
+
+    url = API_URL.format(
+        search_text=brand,
+        time=int(time.time()),
+        session_id=str(uuid.uuid4()),
+    )
+
+    print(f"API URL: {url}")
+    response = session.get(url)
+
+    # Detailed debugging output
+    # print(f"--- [DEBUG] Status Code: {response.status_code} ---")
+    # print(f"--- [DEBUG] Response Headers: {response.headers} ---")
+    # print(f"--- [DEBUG] Raw Body Preview: {response.text[:1000]} ---")
+
+    if response.status_code != 200:
+        print(f"[ERROR] Non-200 HTTP status code returned: {response.status_code}")
+        return []
 
     try:
         data = response.json()
-    except ValueError:
-        print("Non-JSON response for brand:", brand)
-        print("Status:", response.status_code)
-        print("Body:", response.text[:500])  # Log first 500 chars
-        return []  # or return None
-    
+    except ValueError as e:
+        print(f"[ERROR] Failed to parse JSON for brand '{brand}': {e}")
+        return []
+
     items = data.get("items", [])
+    print(f"[SUCCESS] Items found in payload: {len(items)}")
 
     for item in items:
         listing = parse_listing(item)
 
         if not is_approved_brand(listing["brand"]):
-            # print(f"'{listing['brand']}' does not match any approved brand.")
             continue
 
         if not is_valid_listing(listing):
-            print("Missing fields for listing")
-            print(listing)
+            print("Missing required fields for listing:", listing)
             continue
 
         listings.append(listing)
@@ -252,26 +274,48 @@ def is_valid_listing(listing: dict) -> bool:
 
 
 def parse_listing(item: dict) -> dict:
-    photo = item.get("photo", {})
-    thumbnails = photo.get("thumbnails", [])
+    item_box = item.get("item_box", {})
+    
+    # Extract brand from item_box first_line or top-level fallbacks
+    brand = item.get("brand_title") or item_box.get("first_line") or item.get("brand", {}).get("title", "")
+    
+    # Extract price with fallbacks
+    price_obj = item.get("price") or item.get("total_item_price") or {}
+    if isinstance(price_obj, dict):
+        price = price_obj.get("amount", "")
+    else:
+        price = str(price_obj)
+    
+    # Extract size and condition (fallback to item_box second_line e.g., "L · Bra")
+    second_line = item_box.get("second_line", "")
+    size = item.get("size_title") or (second_line.split("·")[0].strip() if "·" in second_line else second_line) or "N/A"
+    condition = item.get("status") or (second_line.split("·")[1].strip() if "·" in second_line else "N/A")
 
-    # Find thumbnail in specific size
+    # Photo URL extraction
+    photo = item.get("photo") or {}
+    thumbnails = photo.get("thumbnails", [])
+    
     img_url = next(
         (
             thumb.get("url")
             for thumb in thumbnails
-            if thumb.get("type") == "thumb310x430"
+            if thumb.get("type") in ("thumb310x430", "thumb150x210")
         ),
-        photo.get("url", ""),  # fallback to original photo url
+        photo.get("full_size_url", photo.get("url", "")),
     )
+
+    # Format listing URL
+    url = item.get("url", "")
+    if url and not url.startswith("http"):
+        url = f"https://www.vinted.se{url}"
 
     return {
         "id": str(item.get("id", "")),
-        "brand": item.get("brand_title", ""),
-        "price": item.get("total_item_price", {}).get("amount", ""),
-        "size": item.get("size_title", "N/A"),
-        "condition": item.get("status", "N/A"),
-        "url": item.get("url", ""),
+        "brand": brand,
+        "price": price,
+        "size": size,
+        "condition": condition,
+        "url": url,
         "img_url": img_url,
     }
 
@@ -314,7 +358,6 @@ def generate_html(listings):
     <tr><td style="height: 10px;"></td></tr>
 """
 
-        # Rows with two columns per row
         for i in range(0, len(items), 2):
             html += "    <tr>\n"
             for j in range(2):
@@ -373,7 +416,7 @@ def generate_html(listings):
 
 if __name__ == "__main__":
     load_dotenv()
-    event = {}  # Provide any necessary event data here
-    context = {}  # Provide any necessary context data here
+    event = {}
+    context = {}
     result = lambda_handler(event, context)
     print(result)
